@@ -10,11 +10,12 @@ namespace BinRenamer
     public partial class frmBinRenamer : Form
     {
         Dictionary<string, string> acronymToRegion = new Dictionary<string, string>();
+        List<Command> commands = new List<Command>();
         string textInfo = string.Empty;
-        FileInfo fileInfo;
         List<string> trackUpdatedList;
-        string discText;
         string trackText;
+        List<string> log = new List<string>();
+        string errorItem;
 
         public frmBinRenamer()
         {
@@ -29,6 +30,12 @@ namespace BinRenamer
         private void btnRename_Click(object sender, EventArgs e)
         {
             Rename(txtFolderName.Text);
+
+            frmExecutionLog frm = new frmExecutionLog(string.Join("\r\n", log));
+
+            frm.Show();
+
+            log = new List<string>();
         }
 
         private void btnFolderName_Click(object sender, EventArgs e)
@@ -43,7 +50,6 @@ namespace BinRenamer
         {
             cmbBaseName.SelectedIndex = 0;
             cmbRegionFormat.SelectedIndex = 0;
-            discText = txtCurrentDiscText.Text;
             trackText = txtCurrentTrackText.Text;
 
             LoadRegions();
@@ -61,32 +67,42 @@ namespace BinRenamer
             string wordDelimiter = string.IsNullOrEmpty(txtWordDelimiter.Text) ? " " : txtWordDelimiter.Text;
             string newWordDelimiter = string.IsNullOrEmpty(txtNewWordDelimiter.Text) ? " " : txtNewWordDelimiter.Text;
 
-            // Renomeia cada jogo dentro da pasta atual
-            foreach (string folder in Directory.GetDirectories(folderName))
+            try
             {
-                DirectoryInfo directoryInfo = new DirectoryInfo(folder);
+                string[] folders = Directory.GetDirectories(folderName);
+
+                if (chkRecursive.Checked && folders.Length > 0)
+                {
+                    // Procura jogos nas pastas internas
+                    foreach (string folder in Directory.GetDirectories(folderName))
+                    {
+                        Rename(folder);
+                    }
+                }
+
+                DirectoryInfo directoryInfo = new DirectoryInfo(folderName);
+
+                //DirectoryInfo directoryInfo = new DirectoryInfo(folderName);
                 string identification = string.Empty;
                 bool hasTrackText = false;
                 string trackInfo = string.Empty;
                 string discInfo = string.Empty;
                 string cueFile = string.Empty;
 
-                // Procura jogos nas pastas internas
-                if (chkRecursive.Checked)
-                {
-                    Rename(folder);
-                }
-
                 // Obtém informações do arquivo cue
-                string[] cueFiles = Directory.GetFiles(folder, "*.cue", SearchOption.TopDirectoryOnly);
+                string[] cueFiles = Directory.GetFiles(folderName, "*.cue", SearchOption.TopDirectoryOnly);
 
                 // Faz apenas se tiver um arquivo .cur
                 if (cueFiles.Length > 0)
                 {
-                    cueFile = cueFiles[0];
-                    fileInfo = new FileInfo(cueFile);
-                    string[] lines = File.ReadAllLines(fileInfo.FullName);
+                    if (cueFile.Length > 1) 
+                    {
+                        throw new Exception("Multiple .cue files in the folder.");
+                    }
 
+                    cueFile = cueFiles[0];
+                    FileInfo fileInfo = new FileInfo(cueFile);
+                    string[] lines = File.ReadAllLines(fileInfo.FullName);
 
                     // Identifica se o texto da trilha deve estar presente no nome dos arquivos
                     hasTrackText = HasTrackText(lines);
@@ -103,19 +119,38 @@ namespace BinRenamer
                     identification = ChoosePatternType(identification);
 
                     // Atualiza e renomeia o arquivo .cue
-                    cueFile = UpdateCueFile(identification, lines, trackMask, padLeftTrack, discInfo, hasTrackText);
+                    fileInfo = UpdateCueFile(identification, fileInfo, lines, trackMask, padLeftTrack, discInfo, hasTrackText);
 
                     // Renomeia o(s) arquivos .bin
-                    RenameBinFiles(identification, folder, trackMask, padLeftTrack, discInfo, hasTrackText);
+                    RenameBinFiles(identification, folderName, trackMask, padLeftTrack, discInfo, hasTrackText);
 
-                    // Altrera o nome da pasta de acordo com as regras definidas                
-                    if (directoryInfo.FullName != directoryInfo.Parent + "\\" + identification + discInfo)
+                    directoryInfo = RenameFolder(identification, directoryInfo, discInfo);
+
+                    if (wordDelimiter != newWordDelimiter)
                     {
-                        Directory.Move(directoryInfo.FullName, directoryInfo.Parent + "\\" + identification + discInfo);
+                        fileInfo = new FileInfo(Path.Combine(directoryInfo.FullName, fileInfo.Name));
+
+                        ReplaceDelimiter(directoryInfo, fileInfo.FullName, lines, wordDelimiter, newWordDelimiter);
                     }
 
-                    ReplaceDelimiter(directoryInfo, cueFile, lines, wordDelimiter, newWordDelimiter);
+                    //int i = 0;
+                    //i = i / i;
+
+                    log.Add("SUCCESS - " + folderName);
                 }
+            }
+            catch (Exception ex) 
+            {
+                log.Add("ERROR - " + folderName + " - " + errorItem + " - " + ex.Message);
+
+                for(int i = commands.Count - 1; i >= 0; i--) 
+                {
+                    commands[i].Undo();
+                }
+            }
+            finally
+            {
+                commands = new List<Command>();
             }
         }
 
@@ -132,20 +167,39 @@ namespace BinRenamer
             string newFileName = string.Empty;
             string newCueFileName = string.Empty;
             string newFolderName = string.Empty;
+            Command command;
+            FileInfo fileInfo;
 
             foreach (string file in binFiles)
             {
                 fileInfo = new FileInfo(file);
                 newFileName = fileInfo.Name.Replace(wordDelimiter, newWordDelimiter);
 
-                File.Move(file, fileInfo.Directory.FullName + "\\" + newFileName);
+                errorItem = file;
+
+                command = new Command();
+                command.NameBefore = file;
+                command.NameAfter = Path.Combine(fileInfo.Directory.FullName, newFileName);
+                File.Move(command.NameBefore, command.NameAfter);
+                command.Type = Command.CommandType.FileMove;
+                commands.Add(command);
             }
 
             fileInfo = new FileInfo(cueFile);
             newFileName = fileInfo.Name.Replace(wordDelimiter, newWordDelimiter);
-            newCueFileName = fileInfo.Directory.FullName + "\\" + newFileName;
+            newCueFileName = Path.Combine(fileInfo.Directory.FullName, newFileName);
 
-            File.Move(cueFile, fileInfo.Directory.FullName + "\\" + newFileName);
+            errorItem = cueFile;
+
+            command = new Command();
+            command.NameBefore = cueFile;
+            command.NameAfter = newCueFileName;
+            File.Move(command.NameBefore, command.NameAfter);
+            command.Type = Command.CommandType.FileMove;
+            commands.Add(command);
+
+            command = new Command();
+            command.Lines = lines;
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -157,15 +211,26 @@ namespace BinRenamer
                 }
             }
 
+            command.NameBefore = newCueFileName;
             // Salva os dados do arquivo .cue
             File.WriteAllLines(newCueFileName, lines);
+            command.Type = Command.CommandType.FileWriteAllLines;
+            commands.Add(command);
 
             newFolderName = directoryInfo.Name.Replace(wordDelimiter, newWordDelimiter);
+
+            command = new Command();
+            command.NameBefore = directoryInfo.FullName;
+            command.NameAfter = Path.Combine(directoryInfo.Parent.FullName, newFolderName);
 
             // Altrera o nome da pasta de acordo com as regras definidas                
             if (directoryInfo.Name != newFolderName)
             {
-                Directory.Move(directoryInfo.FullName, directoryInfo.Parent.FullName + "\\" + newFolderName);
+                errorItem = command.NameBefore;
+
+                Directory.Move(command.NameBefore, command.NameAfter);
+                command.Type = Command.CommandType.DirectoryMove;
+                commands.Add(command);
             }
         }
 
@@ -275,19 +340,15 @@ namespace BinRenamer
         private string RemoveDiscWord(string identification, string discMask, int padLefDisc)
         {
             int identificationLength = identification.Length;
+            string[] discTextArray = txtCurrentDiscText.Text.Split(",");
 
-            identification = RemoveWord(identification, discText, discMask, padLefDisc);
-
-            if (identificationLength == identification.Length)
+            foreach (string discText in discTextArray) 
             {
-                identification = RemoveWord(identification, "Disk", discMask, padLefDisc);
+                identification = RemoveWord(identification, discText, discMask, padLefDisc);
+
+                if (identificationLength != identification.Length) break;
 
                 identificationLength = identification.Length;
-            }
-
-            if (identificationLength == identification.Length)
-            {
-                identification = RemoveWord(identification, "CD", discMask, padLefDisc);
             }
 
             return identification;
@@ -359,30 +420,49 @@ namespace BinRenamer
             return identification;
         }
 
-        private string UpdateCueFile(string identification, string[] lines, string trackMask, int padLeftTrack, string discInfo, bool hasTrackText)
+        private FileInfo UpdateCueFile(string identification, FileInfo fileInfo, string[] lines, string trackMask, int padLeftTrack, string discInfo, bool hasTrackText)
         {
             string newCueFileName = string.Empty;
+            Command command;
+
+            command = new Command();
+            command.Lines = lines;
 
             // Atualiza os dados do arquivo .cue, caso exista um arquivo com o mesmo nome, altera também
-            lines = UpdataCueFileData(identification, lines, trackMask, padLeftTrack, discInfo, hasTrackText);
+            lines = UpdataCueFileData(identification, fileInfo, lines, trackMask, padLeftTrack, discInfo, hasTrackText);
 
+            errorItem = fileInfo.FullName;
+
+            command.NameBefore = fileInfo.FullName;
             // Salva os dados do arquivo .cue
             File.WriteAllLines(fileInfo.FullName, lines);
+            command.Type = Command.CommandType.FileWriteAllLines;
+            commands.Add(command);
 
-            newCueFileName = fileInfo.DirectoryName + "\\" + identification + discInfo + ".cue";
+            newCueFileName = Path.Combine(fileInfo.DirectoryName, identification + discInfo + ".cue");
 
+            errorItem = fileInfo.FullName;
+
+            command = new Command();
+            command.NameBefore = fileInfo.FullName;
+            command.NameAfter = newCueFileName;
             // Altera o nome do arquivo .cue
-            File.Move(fileInfo.FullName, newCueFileName);
+            File.Move(command.NameBefore, command.NameAfter);
+            command.Type = Command.CommandType.FileMove;
+            commands.Add(command);
 
-            return newCueFileName;
+            return new FileInfo(newCueFileName);
         }
 
-        private string[] UpdataCueFileData(string identification, string[] lines, string trackMask, int padLeftTrack, string discInfo, bool hasTrackText)
+        private string[] UpdataCueFileData(string identification, FileInfo fileInfo, string[] lines, string trackMask, int padLeftTrack, string discInfo, bool hasTrackText)
         {
             int trackCount = 1;
             string trackInfo = string.Empty;
             string trackFileName = string.Empty;
             trackUpdatedList = new List<string>();
+            string newBinFileName = string.Empty;
+            Command command;
+            bool validCueFile = false;
 
             // Atualiza as linhas de arquivos de trilha dentro do arquivo cue
             for (int i = 0; i < lines.Length; i++)
@@ -406,16 +486,35 @@ namespace BinRenamer
                     lines[i] = "FILE \"" + identification + discInfo + trackInfo + ".bin\" BINARY";
 
                     // Se já existe um arquivo de trilha correspondente à entrada no arquivo cue, já renomeia
-                    if (File.Exists(fileInfo.DirectoryName + "\\" + trackFileName))
+                    if (File.Exists(Path.Combine(fileInfo.DirectoryName, discInfo, trackFileName)))
                     {
-                        File.Move(fileInfo.DirectoryName + "\\" + trackFileName, fileInfo.DirectoryName + "\\" + identification + discInfo + trackInfo + ".bin");
-                        trackUpdatedList.Add(fileInfo.DirectoryName + "\\" + identification + discInfo + trackInfo + ".bin");
+                        newBinFileName = identification + discInfo + trackInfo + ".bin";
+
+                        errorItem = Path.Combine(fileInfo.DirectoryName, trackFileName);
+
+                        command = new Command();
+                        command.NameBefore = Path.Combine(fileInfo.DirectoryName, trackFileName);
+                        command.NameAfter = Path.Combine(fileInfo.DirectoryName, newBinFileName);
+                        File.Move(command.NameBefore, command.NameAfter);
+                        command.Type = Command.CommandType.FileMove;
+                        commands.Add(command);
+
+                        trackUpdatedList.Add(Path.Combine(fileInfo.DirectoryName, newBinFileName));
                     }
+
+                    validCueFile = true;
 
                     if (!hasTrackText) break;
 
                     trackCount++;
                 }
+            }
+
+            if (!validCueFile)
+            {
+                errorItem = fileInfo.FullName;
+
+                throw new Exception("Invalid .cue file.");
             }
 
             return lines;
@@ -432,6 +531,8 @@ namespace BinRenamer
             string trackInfo = string.Empty;
             int trackWordStartPosdition = -1;
             int trackWordEndPosdition = -1;
+            FileInfo fileInfo;
+            Command command;
 
             // Entra apenas se foi entrada a palavra Track antes, para poder renomear os arquivos de trilha
             if (hasTrackText)
@@ -445,7 +546,6 @@ namespace BinRenamer
                     //// Se já foi alterado um arquivo de trilha anteriormente, não altera novamente
                     if (!trackUpdatedList.Contains(file))
                     {
-
                         trackWordStartPosdition = GetWordStartPosition(binFileName, trackText);
 
                         trackWordEndPosdition = binFileName.IndexOf(")", trackWordStartPosdition, StringComparison.OrdinalIgnoreCase);
@@ -466,7 +566,14 @@ namespace BinRenamer
 
                         newBinFileName = identification + discInfo + trackInfo;
 
-                        File.Move(fileInfo.FullName, fileInfo.DirectoryName + "\\" + newBinFileName + ".bin");
+                        errorItem = fileInfo.FullName;
+
+                        command = new Command();
+                        command.NameBefore = fileInfo.FullName;
+                        command.NameAfter = Path.Combine(fileInfo.DirectoryName, newBinFileName + ".bin");
+                        File.Move(command.NameBefore, command.NameAfter);
+                        command.Type = Command.CommandType.FileMove;
+                        commands.Add(command);
                     }
                 }
             }
@@ -480,19 +587,44 @@ namespace BinRenamer
                     {
                         fileInfo = new FileInfo(binFiles[0]);
 
-                        File.Move(fileInfo.FullName, fileInfo.DirectoryName + "\\" + identification + ".bin");
+                        newBinFileName = identification + discInfo;
+
+                        errorItem = fileInfo.FullName;
+
+                        command = new Command();
+                        command.NameBefore = fileInfo.FullName;
+                        command.NameAfter = Path.Combine(fileInfo.DirectoryName, newBinFileName + ".bin");
+                        File.Move(command.NameBefore, command.NameAfter);
+                        command.Type = Command.CommandType.FileMove;
+                        commands.Add(command);
                     }
                 }
                 else
                 {
-                    //erro
+                    errorItem = binFiles[0] + " / " + binFiles[1];
+
+                    throw new Exception("Multiple bin files for a single track.");
                 }
             }
         }
 
-        private void txtCurrentDiscText_Leave(object sender, EventArgs e)
+        private DirectoryInfo RenameFolder(string identification, DirectoryInfo directoryInfo, string discInfo)
         {
-            discText = txtCurrentDiscText.Text;
+            Command command = new Command();
+            command.NameBefore = directoryInfo.FullName;
+            command.NameAfter = Path.Combine(directoryInfo.Parent.FullName, identification + discInfo);
+
+            // Altrera o nome da pasta de acordo com as regras definidas                
+            if (command.NameBefore != command.NameAfter)
+            {
+                errorItem = command.NameBefore;
+
+                Directory.Move(command.NameBefore, command.NameAfter);
+                command.Type = Command.CommandType.DirectoryMove;
+                commands.Add(command);
+            }
+
+            return new DirectoryInfo(command.NameAfter);
         }
 
         private void txtCurrentTrackText_Leave(object sender, EventArgs e)

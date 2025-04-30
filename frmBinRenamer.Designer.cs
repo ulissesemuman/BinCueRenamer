@@ -216,8 +216,7 @@
             txtCurrentDiscText.Name = "txtCurrentDiscText";
             txtCurrentDiscText.Size = new Size(100, 23);
             txtCurrentDiscText.TabIndex = 24;
-            txtCurrentDiscText.Text = "Disc";
-            txtCurrentDiscText.Leave += txtCurrentDiscText_Leave;
+            txtCurrentDiscText.Text = "Disc,Disk,CD,$n";
             // 
             // chkSingleTrackText
             // 
@@ -246,7 +245,7 @@
             chkDiscLeadingZeroes.AutoSize = true;
             chkDiscLeadingZeroes.Checked = true;
             chkDiscLeadingZeroes.CheckState = CheckState.Checked;
-            chkDiscLeadingZeroes.Location = new Point(175, 32);
+            chkDiscLeadingZeroes.Location = new Point(175, 28);
             chkDiscLeadingZeroes.Name = "chkDiscLeadingZeroes";
             chkDiscLeadingZeroes.Size = new Size(104, 19);
             chkDiscLeadingZeroes.TabIndex = 15;
@@ -255,17 +254,17 @@
             // 
             // txtTrackNaming
             // 
-            txtTrackNaming.Location = new Point(46, 57);
+            txtTrackNaming.Location = new Point(73, 57);
             txtTrackNaming.Name = "txtTrackNaming";
-            txtTrackNaming.Size = new Size(123, 23);
+            txtTrackNaming.Size = new Size(96, 23);
             txtTrackNaming.TabIndex = 14;
             txtTrackNaming.Text = "(Track %1)";
             // 
             // txtDiscNaming
             // 
-            txtDiscNaming.Location = new Point(45, 28);
+            txtDiscNaming.Location = new Point(73, 25);
             txtDiscNaming.Name = "txtDiscNaming";
-            txtDiscNaming.Size = new Size(124, 23);
+            txtDiscNaming.Size = new Size(96, 23);
             txtDiscNaming.TabIndex = 13;
             txtDiscNaming.Text = "(Disc %1)";
             // 
@@ -274,18 +273,18 @@
             label5.AutoSize = true;
             label5.Location = new Point(10, 58);
             label5.Name = "label5";
-            label5.Size = new Size(35, 15);
+            label5.Size = new Size(66, 15);
             label5.TabIndex = 12;
-            label5.Text = "Track";
+            label5.Text = "Track Mask";
             // 
             // label3
             // 
             label3.AutoSize = true;
             label3.Location = new Point(10, 28);
             label3.Name = "label3";
-            label3.Size = new Size(29, 15);
+            label3.Size = new Size(60, 15);
             label3.TabIndex = 11;
-            label3.Text = "Disc";
+            label3.Text = "Disc Mask";
             // 
             // groupBox3
             // 
